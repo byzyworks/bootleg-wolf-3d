@@ -1,0 +1,220 @@
+<!-- Student:        John Ellis -->
+<!-- Course:         Computer Graphics (CAP4730.01 I&T) -->
+<!-- Date Created:   April 22nd, 2020 -->
+<!-- Date Finalized: April 26th, 2020 -->
+<!-- Assignment:     Escape The Maze -->
+
+<!doctype html>
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		
+		<title>Escape The Maze</title>
+		
+		<script id="2dVertexShader" type="notjs">
+			attribute vec4 a_vertexPosition;
+			attribute vec2 a_vertexTexCoords;
+			attribute vec3 a_vertexNormal;
+			
+			uniform mat4 u_world;
+			uniform mat4 u_worldInverseTranspose;
+			
+			uniform vec3 u_cameraLoc;
+			uniform vec3 u_cameraRot;
+			uniform vec3 u_cameraZoom;
+			
+			uniform float n;
+			uniform float f;
+			uniform float r;
+			uniform float t;
+			
+			uniform vec3 u_pointLightPosition[15];
+			
+			varying vec3 v_vertexNormal;
+			varying vec2 v_vertexTexCoords;
+			varying vec3 v_surfaceToLight;
+			varying vec3 v_pointLightPosition[15];
+			varying vec3 v_surfaceToPointLight[15];
+			
+			vec4 translateCamera(vec4 positionV, vec3 deltaV)
+			{
+				mat4 translateM = mat4(            1.0,             0.0,      0.0, 0.0,
+				                                   0.0,             1.0,      0.0, 0.0,
+								                   0.0,             0.0,      1.0, 0.0,
+								       -1.0 * deltaV.x, -1.0 * deltaV.y, deltaV.z, 1.0);
+				return translateM * positionV;
+			}
+			
+			vec4 xRotateCamera(vec4 positionV, vec3 deltaV)
+			{
+				vec3 c = cos(deltaV);
+				vec3 s = sin(deltaV);
+				
+				mat4 xRotateM = mat4(1.0,        0.0,       0.0, 0.0,
+				                     0.0,  1.0 * c.x, 1.0 * s.x, 0.0,
+								     0.0, -1.0 * s.x, 1.0 * c.x, 0.0,
+								     0.0,        0.0,       0.0, 1.0);
+				return xRotateM * positionV;
+			}
+			
+			vec4 yRotateCamera(vec4 positionV, vec3 deltaV)
+			{
+				vec3 c = cos(deltaV);
+				vec3 s = sin(deltaV);
+				
+				mat4 yRotateM = mat4(1.0 * c.y, 0.0, -1.0 * s.y, 0.0,
+									       0.0, 1.0,        0.0, 0.0,
+									 1.0 * s.y, 0.0,  1.0 * c.y, 0.0,
+									       0.0, 0.0,        0.0, 1.0);
+				return yRotateM * positionV;
+			}
+			
+			vec4 zRotateCamera(vec4 positionV, vec3 deltaV)
+			{
+				vec3 c = cos(deltaV);
+				vec3 s = sin(deltaV);
+				
+				mat4 zRotateM = mat4( 1.0 * c.z, 1.0 * s.z, 0.0, 0.0,
+									 -1.0 * s.z, 1.0 * c.z, 0.0, 0.0,
+									        0.0, 0.0,       1.0, 0.0,
+									        0.0, 0.0,       0.0, 1.0);
+				return zRotateM * positionV;
+			}
+			
+			vec4 ApplyProjection(vec4 positionV)
+			{
+				mat4 simpleOrthoM        = mat4(1.0,0.0,0.0,0.0,
+								                0.0,1.0,0.0,0.0, 
+								                0.0,0.0,1.0,0.0, 
+								                0.0,0.0,0.0,1.0);
+				mat4 complexOrthoM       = mat4(1.0 / r,     0.0, 0.0, 0.0,
+											        0.0, 1.0 / t, 0.0, 0.0,
+											        0.0,     0.0, 1.0, 0.0,
+											        0.0,     0.0, 0.0, 1.0);
+				mat4 simplePerspectiveM  = mat4(1.0, 0.0,  0.0,  0.0,
+									            0.0, 1.0,  0.0,  0.0,
+									            0.0, 0.0, -1.0, -1.0,
+									            0.0, 0.0, -2.0,  0.0);
+				mat4 complexPerspectiveM = mat4(n / r,   0.0,                      0.0,  0.0,
+											      0.0, n / t,                      0.0,  0.0,
+											      0.0,   0.0, -1.0 * (f + n) / (f - n), -1.0,
+											      0.0,   0.0, -2.0 * (f * n) / (f - n),  0.0);
+
+				return complexPerspectiveM * positionV;
+			}
+			
+			void main()
+			{
+				v_vertexTexCoords = a_vertexTexCoords;
+				
+				vec4 position = u_world * a_vertexPosition;
+				
+				for (int i = 0; i < 15; i++)
+				{
+					v_pointLightPosition[i] = u_pointLightPosition[i];
+					v_surfaceToPointLight[i] = position.xyz - v_pointLightPosition[i];
+				}
+				
+				position = translateCamera(position, u_cameraLoc);
+				position = yRotateCamera(position, u_cameraRot);
+				
+				v_vertexNormal = (u_worldInverseTranspose * vec4(a_vertexNormal, 1.0)).xyz;
+				
+				position    = ApplyProjection(position);
+				gl_Position = position;
+			}
+		</script>
+		<script id="2dFragmentShader" type="notjs">
+			precision mediump float;
+			
+			varying vec3 v_vertexNormal;
+			varying vec2 v_vertexTexCoords;
+			varying vec3 v_surfaceToLight;
+			varying vec3 v_pointLightPosition[15];
+			varying vec3 v_surfaceToPointLight[15];
+			
+			uniform sampler2D u_texture;
+			
+			void main()
+			{
+				float amb = 0.2;
+				
+				float d_light = dot(normalize(v_vertexNormal), normalize(vec3(0.0, 1.0, 1.0))) * 0.4;
+				if (d_light < 0.0)
+				{
+					d_light = 0.0;
+				}
+				
+				float p_light = 0.0;
+				float p_light_temp = 0.0;
+				for (int i = 0; i < 15; i++)
+				{
+					p_light_temp = 0.002 / (4.0 * 3.1415 * pow(length(v_surfaceToPointLight[i]), 2.0));
+					if (p_light_temp < 0.0)
+					{
+						p_light_temp = 0.0;
+					}
+					p_light += p_light_temp;
+				}
+				
+				vec4 finalColor = (amb + d_light + p_light) * texture2D(u_texture, v_vertexTexCoords);
+				if (finalColor.a < 0.1)
+				{
+					discard;
+				}
+				gl_FragColor = finalColor;
+			}
+		</script>
+		<script src="main.js"></script>
+		<script src="webgl_program.js"></script>
+		<script src="common_m4.js"></script>
+		<script src="common_base.js"></script>
+		<script src="common_shapes.js"></script>
+		<script src="common_colliders.js"></script>
+		<script src="object_player.js"></script>
+		<script src="object_bullet.js"></script>
+		<script src="object_soldiers.js"></script>
+		<script src="object_lamp.js"></script>
+		<script src="object_worldborder.js"></script>
+		<script src="object_simple.js"></script>
+		<script src="scene_voxel.js"></script>
+		<script src="scene_main.js"></script>
+		<style>
+			#myCanvas
+			{
+				position: absolute;
+				pointer-events: none;
+				z-index: 8;
+			}
+			#overlay
+			{
+				position: absolute;
+				z-index: 9;
+			}
+			#hurt
+			{
+				position: absolute;
+				z-index: 10;
+			}
+			#finish
+			{
+				position: absolute;
+				z-index: 11;
+			}
+		</style>
+	</head>
+	<body bgcolor="#000000">
+		<canvas id="myCanvas" width="1600" height="900" style="outline:solid;"></canvas>
+		
+		<img id="overlay" src="overlay.png" width="1600" height="900">
+		<img id="hurt" src="hurt.png" width="1600" height="900" style="visibility:hidden">
+		<img id="finish" src="finish.png" width="1600" height="900" style="visibility:hidden">
+		
+		<script>
+			var canvas = document.getElementById("myCanvas");
+			var gl = canvas.getContext("webgl");
+			var myMain = new main();
+		</script>
+	</body>
+</html>
